@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../../firebase.js';
+import { db } from '../../firebase';
 import { collection, onSnapshot, query, where, deleteDoc, doc } from 'firebase/firestore';
 import { ChevronLeft, ChevronRight, PlusCircle, X } from 'lucide-react';
+
+// --- Helper function to get a YYYY-MM-DD string from a Date object ---
+const toLocalDateString = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
 
 // Main Meal Planner Component
 const MealPlanner = ({ user, recipes }) => {
@@ -45,7 +53,10 @@ const MealPlanner = ({ user, recipes }) => {
             const plan = {};
             querySnapshot.forEach((doc) => {
                 const data = doc.data();
-                const dateStr = data.date.toDate().toISOString().split('T')[0];
+                // **THE FIX IS HERE:** Convert timestamp to local date before getting the string
+                const localDate = data.date.toDate(); 
+                const dateStr = toLocalDateString(localDate);
+                
                 if (!plan[dateStr]) {
                     plan[dateStr] = {};
                 }
@@ -75,9 +86,10 @@ const MealPlanner = ({ user, recipes }) => {
                     <DayColumn 
                         key={date.toISOString()} 
                         date={date} 
-                        plannedMeals={mealPlan[date.toISOString().split('T')[0]] || {}}
+                        // Use the corrected local date string to find meals
+                        plannedMeals={mealPlan[toLocalDateString(date)] || {}}
                         recipes={recipes}
-                        user={user} // Pass user down for delete functionality
+                        user={user}
                     />
                 ))}
             </div>
@@ -85,7 +97,7 @@ const MealPlanner = ({ user, recipes }) => {
     );
 };
 
-// --- Helper Components for the Planner ---
+// --- Helper Components for the Planner (No changes below this line) ---
 
 const WeekNavigator = ({ startDate, endDate, onPrev, onNext }) => {
     const options = { month: 'short', day: 'numeric' };
@@ -118,7 +130,7 @@ const DayColumn = ({ date, plannedMeals, recipes, user }) => {
                         type={type} 
                         meal={plannedMeals[type]}
                         recipes={recipes}
-                        user={user} // Pass user down
+                        user={user}
                     />
                 ))}
             </div>
@@ -126,14 +138,12 @@ const DayColumn = ({ date, plannedMeals, recipes, user }) => {
     );
 };
 
-// --- UPDATED MealSlot component with delete functionality ---
 const MealSlot = ({ type, meal, recipes, user }) => {
     const recipeDetails = meal ? recipes.find(r => r.id === meal.recipeId) : null;
 
     const handleRemoveMeal = async () => {
         if (!meal || !user) return;
         
-        // Use a simple confirm dialog for now
         if (window.confirm(`Are you sure you want to remove "${recipeDetails.title}" from your plan?`)) {
             try {
                 const mealDocRef = doc(db, `users/${user.uid}/mealPlan`, meal.id);
@@ -152,7 +162,6 @@ const MealSlot = ({ type, meal, recipes, user }) => {
                  <div className="relative bg-gray-50 dark:bg-gray-700 p-2 rounded-lg text-center group">
                     <img src={recipeDetails.imageUrl} alt={recipeDetails.title} className="w-full h-16 object-cover rounded-md mb-2" />
                     <p className="text-xs font-bold text-gray-800 dark:text-gray-100 truncate">{recipeDetails.title}</p>
-                    {/* NEW: Delete Button */}
                     <button 
                         onClick={handleRemoveMeal}
                         className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"

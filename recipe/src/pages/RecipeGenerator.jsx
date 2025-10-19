@@ -7,7 +7,7 @@ import { Frown, Search, X, Filter, XCircle } from 'lucide-react';
 const cleanIngredient = (text) => {
     return text
         .toLowerCase()
-        .replace(/([\d/]+|cup|cups|tsp|tbsp|g|kg|oz|ml|l|diced|chopped|minced|sliced|whole|peeled|grated|can)/g, '')
+        .replace(/([\d/]+|cup|cups|tsp|tbsp|tablespoon|tablespoons|teaspoon|g|kg|oz|ml|l|pound|diced|chopped|minced|sliced|whole|peeled|grated|can|of|fresh)/g, '')
         .replace(/[,-]/g, ' ')
         .trim()
         .split(' ')[0];

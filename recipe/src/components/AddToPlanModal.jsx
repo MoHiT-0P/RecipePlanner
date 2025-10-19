@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { db } from '../firebase.js';
+import { db } from '../firebase';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { X, Calendar, Utensils } from 'lucide-react';
 
 const AddToPlanModal = ({ user, recipe, onClose }) => {
-    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]); // Default to today
+    // Get today's date in YYYY-MM-DD format for the input's min attribute
+    const today = new Date().toISOString().split('T')[0];
+    
+    const [selectedDate, setSelectedDate] = useState(today);
     const [mealType, setMealType] = useState('Breakfast');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -14,13 +17,18 @@ const AddToPlanModal = ({ user, recipe, onClose }) => {
         setLoading(true);
         setError('');
 
-        try {
-            // Corrected Date Handling:
-            // Create a date object from the YYYY-MM-DD string.
-            // This ensures it's interpreted as the start of the day in the user's local timezone,
-            // which Firestore then correctly converts to a consistent UTC timestamp.
-            const planDate = new Date(selectedDate + 'T00:00:00');
+        const planDate = new Date(selectedDate + 'T00:00:00');
+        const beginningOfToday = new Date();
+        beginningOfToday.setHours(0, 0, 0, 0);
 
+        // --- NEW VALIDATION LOGIC ---
+        if (planDate < beginningOfToday) {
+            setError("Cannot add meals to past dates.");
+            setLoading(false);
+            return; // Stop the submission
+        }
+
+        try {
             const mealPlanRef = collection(db, `users/${user.uid}/mealPlan`);
             await addDoc(mealPlanRef, {
                 recipeId: recipe.id,
@@ -32,7 +40,6 @@ const AddToPlanModal = ({ user, recipe, onClose }) => {
             });
             onClose(); // Close modal on success
         } catch (err) {
-            // Log the detailed error to the console for debugging
             console.error("Detailed error adding to meal plan: ", err);
             setError("Failed to add meal. Please check the console for details.");
         } finally {
@@ -62,6 +69,7 @@ const AddToPlanModal = ({ user, recipe, onClose }) => {
                                 value={selectedDate}
                                 onChange={(e) => setSelectedDate(e.target.value)}
                                 required
+                                min={today} // --- NEW: Prevent selecting past dates in UI ---
                                 className="w-full pl-10 p-2 border rounded-lg bg-transparent dark:border-gray-600 dark:text-gray-200"
                             />
                         </div>
