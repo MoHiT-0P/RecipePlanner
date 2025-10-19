@@ -15,23 +15,26 @@ const AddToPlanModal = ({ user, recipe, onClose }) => {
         setError('');
 
         try {
-            const planDate = new Date(selectedDate);
-            // Adjust for timezone offset to store in UTC
-            planDate.setMinutes(planDate.getMinutes() + planDate.getTimezoneOffset());
+            // Corrected Date Handling:
+            // Create a date object from the YYYY-MM-DD string.
+            // This ensures it's interpreted as the start of the day in the user's local timezone,
+            // which Firestore then correctly converts to a consistent UTC timestamp.
+            const planDate = new Date(selectedDate + 'T00:00:00');
 
             const mealPlanRef = collection(db, `users/${user.uid}/mealPlan`);
             await addDoc(mealPlanRef, {
                 recipeId: recipe.id,
-                recipeTitle: recipe.title, // Store title for easy display
+                recipeTitle: recipe.title,
                 date: Timestamp.fromDate(planDate),
                 mealType: mealType,
-                calories: recipe.totalCalories, // Store nutritional info
+                calories: recipe.totalCalories,
                 createdAt: Timestamp.now(),
             });
             onClose(); // Close modal on success
         } catch (err) {
-            console.error("Error adding to meal plan: ", err);
-            setError("Failed to add meal. Please try again.");
+            // Log the detailed error to the console for debugging
+            console.error("Detailed error adding to meal plan: ", err);
+            setError("Failed to add meal. Please check the console for details.");
         } finally {
             setLoading(false);
         }
