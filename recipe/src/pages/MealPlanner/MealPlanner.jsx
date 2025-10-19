@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../firebase.js';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, deleteDoc, doc } from 'firebase/firestore';
 import { ChevronLeft, ChevronRight, PlusCircle, X } from 'lucide-react';
 
 // Main Meal Planner Component
@@ -15,7 +15,7 @@ const MealPlanner = ({ user, recipes }) => {
             const today = new Date();
             today.setDate(today.getDate() + weekOffset * 7);
             const currentDay = today.getDay();
-            const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay; // Adjust for Sunday (0) vs. Monday (1)
+            const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay;
             const monday = new Date(today.setDate(today.getDate() + mondayOffset));
             
             const dates = [];
@@ -33,9 +33,9 @@ const MealPlanner = ({ user, recipes }) => {
     useEffect(() => {
         if (!user || weekDates.length === 0) return;
 
-        const startOfWeek = weekDates[0];
+        const startOfWeek = new Date(weekDates[0]);
         startOfWeek.setHours(0, 0, 0, 0);
-        const endOfWeek = weekDates[6];
+        const endOfWeek = new Date(weekDates[6]);
         endOfWeek.setHours(23, 59, 59, 999);
 
         const mealPlanRef = collection(db, `users/${user.uid}/mealPlan`);
@@ -77,6 +77,7 @@ const MealPlanner = ({ user, recipes }) => {
                         date={date} 
                         plannedMeals={mealPlan[date.toISOString().split('T')[0]] || {}}
                         recipes={recipes}
+                        user={user} // Pass user down for delete functionality
                     />
                 ))}
             </div>
@@ -99,7 +100,7 @@ const WeekNavigator = ({ startDate, endDate, onPrev, onNext }) => {
     );
 };
 
-const DayColumn = ({ date, plannedMeals, recipes }) => {
+const DayColumn = ({ date, plannedMeals, recipes, user }) => {
     const mealTypes = ['Breakfast', 'Lunch', 'Dinner'];
     const dayName = date.toLocaleDateString(undefined, { weekday: 'short' });
     const dayNumber = date.getDate();
@@ -117,6 +118,7 @@ const DayColumn = ({ date, plannedMeals, recipes }) => {
                         type={type} 
                         meal={plannedMeals[type]}
                         recipes={recipes}
+                        user={user} // Pass user down
                     />
                 ))}
             </div>
@@ -124,16 +126,40 @@ const DayColumn = ({ date, plannedMeals, recipes }) => {
     );
 };
 
-const MealSlot = ({ type, meal, recipes }) => {
+// --- UPDATED MealSlot component with delete functionality ---
+const MealSlot = ({ type, meal, recipes, user }) => {
     const recipeDetails = meal ? recipes.find(r => r.id === meal.recipeId) : null;
+
+    const handleRemoveMeal = async () => {
+        if (!meal || !user) return;
+        
+        // Use a simple confirm dialog for now
+        if (window.confirm(`Are you sure you want to remove "${recipeDetails.title}" from your plan?`)) {
+            try {
+                const mealDocRef = doc(db, `users/${user.uid}/mealPlan`, meal.id);
+                await deleteDoc(mealDocRef);
+            } catch (error) {
+                console.error("Error removing meal:", error);
+                alert("Failed to remove meal from plan.");
+            }
+        }
+    };
 
     if (recipeDetails) {
         return (
             <div>
                  <p className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-1">{type}</p>
-                 <div className="bg-gray-50 dark:bg-gray-700 p-2 rounded-lg text-center">
+                 <div className="relative bg-gray-50 dark:bg-gray-700 p-2 rounded-lg text-center group">
                     <img src={recipeDetails.imageUrl} alt={recipeDetails.title} className="w-full h-16 object-cover rounded-md mb-2" />
                     <p className="text-xs font-bold text-gray-800 dark:text-gray-100 truncate">{recipeDetails.title}</p>
+                    {/* NEW: Delete Button */}
+                    <button 
+                        onClick={handleRemoveMeal}
+                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="Remove meal"
+                    >
+                        <X size={14} />
+                    </button>
                  </div>
             </div>
         );

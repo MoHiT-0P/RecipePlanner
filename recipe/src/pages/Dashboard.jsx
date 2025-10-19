@@ -4,10 +4,9 @@ import RecipeCard from '../components/RecipeCard';
 import RecipeDetailModal from '../components/RecipeDetailModal';
 import { Utensils, Star, Heart, Clock, Filter, XCircle } from 'lucide-react';
 
-const Dashboard = ({ userData, recipes, onSaveRecipe, onLogMeal }) => {
+const Dashboard = ({ user, userData, recipes, onSaveRecipe, onLogMeal }) => { // Added user prop
     const [selectedRecipe, setSelectedRecipe] = useState(null);
     
-    // --- NEW: State for filters ---
     const [filters, setFilters] = useState({
         cuisine: '',
         difficulty: '',
@@ -15,7 +14,6 @@ const Dashboard = ({ userData, recipes, onSaveRecipe, onLogMeal }) => {
     });
     const [filteredRecipes, setFilteredRecipes] = useState(recipes);
 
-    // --- NEW: Logic to apply filters ---
     useEffect(() => {
         let result = recipes;
         if (filters.cuisine) {
@@ -39,11 +37,9 @@ const Dashboard = ({ userData, recipes, onSaveRecipe, onLogMeal }) => {
         setFilters({ cuisine: '', difficulty: '', dietaryType: '' });
     };
 
-    // --- NEW: Create dynamic lists for new sections ---
     const quickRecipes = recipes.filter(r => r.cookTime <= 30).slice(0, 4);
     const healthyRecipes = recipes.filter(r => r.totalCalories <= 600).slice(0, 4);
 
-    // --- NEW: Get unique options for filter dropdowns ---
     const cuisineOptions = [...new Set(recipes.map(r => r.cuisine).filter(Boolean))];
     const difficultyOptions = [...new Set(recipes.map(r => r.difficulty).filter(Boolean))];
     const dietaryOptions = [...new Set(recipes.map(r => r.dietaryType).filter(Boolean))];
@@ -60,7 +56,6 @@ const Dashboard = ({ userData, recipes, onSaveRecipe, onLogMeal }) => {
                 <StatCard icon={<Clock />} label="Calories Today" value={userData.caloriesToday} />
             </div>
 
-            {/* --- NEW SECTION: Quick & Easy --- */}
             <h2 className="text-2xl font-bold text-gray-800 mt-12 dark:text-gray-100">Quick & Easy ⚡</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
                 {quickRecipes.map(recipe => (
@@ -68,7 +63,6 @@ const Dashboard = ({ userData, recipes, onSaveRecipe, onLogMeal }) => {
                 ))}
             </div>
 
-            {/* --- NEW SECTION: Healthy Choices --- */}
             <h2 className="text-2xl font-bold text-gray-800 mt-12 dark:text-gray-100">Healthy Choices 🥗</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
                 {healthyRecipes.map(recipe => (
@@ -76,7 +70,6 @@ const Dashboard = ({ userData, recipes, onSaveRecipe, onLogMeal }) => {
                 ))}
             </div>
             
-            {/* --- NEW: Filter Bar for Browsing All Recipes --- */}
             <div className="mt-12">
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Browse All Recipes</h2>
                 <div className="mt-4 p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm flex flex-col md:flex-row gap-4 items-center">
@@ -100,7 +93,6 @@ const Dashboard = ({ userData, recipes, onSaveRecipe, onLogMeal }) => {
                 </div>
             </div>
 
-            {/* --- UPDATED: Main Recipe Grid now uses filtered list --- */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
                 {filteredRecipes.map(recipe => (
                     <RecipeCard 
@@ -113,7 +105,8 @@ const Dashboard = ({ userData, recipes, onSaveRecipe, onLogMeal }) => {
                 ))}
             </div>
 
-            {selectedRecipe && <RecipeDetailModal recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} onLogMeal={onLogMeal} />}
+            {/* UPDATED: Pass the user prop down to the modal */}
+            {selectedRecipe && <RecipeDetailModal user={user} recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} onLogMeal={onLogMeal} />}
         </div>
     );
 };

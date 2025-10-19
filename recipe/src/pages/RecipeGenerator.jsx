@@ -13,34 +13,31 @@ const cleanIngredient = (text) => {
         .split(' ')[0];
 };
 
-const RecipeGenerator = ({ allRecipes, userData, onSaveRecipe, onLogMeal }) => {
+const RecipeGenerator = ({ user, allRecipes, userData, onSaveRecipe, onLogMeal }) => { // Added user prop
     const [masterIngredientList, setMasterIngredientList] = useState([]);
     const [selectedIngredients, setSelectedIngredients] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [suggestions, setSuggestions] = useState([]);
     
-    const [foundRecipes, setFoundRecipes] = useState([]); // Initial search results
+    const [foundRecipes, setFoundRecipes] = useState([]);
     const [hasSearched, setHasSearched] = useState(false);
     const [selectedRecipe, setSelectedRecipe] = useState(null);
     
-    // --- NEW: State for filters ---
     const [filters, setFilters] = useState({
         cuisine: '',
         difficulty: '',
         dietaryType: '',
     });
-    const [displayRecipes, setDisplayRecipes] = useState([]); // Recipes to actually display after filtering
+    const [displayRecipes, setDisplayRecipes] = useState([]);
 
     const suggestionsRef = useRef(null);
 
-    // Create the master ingredient list once, with cleaning
     useEffect(() => {
         const allIngredients = allRecipes.flatMap(recipe => recipe.ingredients.map(cleanIngredient));
-        const uniqueIngredients = [...new Set(allIngredients)].filter(Boolean); // Filter out any empty strings
+        const uniqueIngredients = [...new Set(allIngredients)].filter(Boolean);
         setMasterIngredientList(uniqueIngredients.sort());
     }, [allRecipes]);
 
-    // Handle clicking outside the suggestions to close it
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (suggestionsRef.current && !suggestionsRef.current.contains(event.target)) {
@@ -51,7 +48,6 @@ const RecipeGenerator = ({ allRecipes, userData, onSaveRecipe, onLogMeal }) => {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
     
-    // --- NEW: Logic to apply filters on top of search results ---
     useEffect(() => {
         let result = foundRecipes;
         if (filters.cuisine) {
@@ -94,7 +90,7 @@ const RecipeGenerator = ({ allRecipes, userData, onSaveRecipe, onLogMeal }) => {
 
     const handleSearch = () => {
         setHasSearched(true);
-        clearFilters(); // Reset filters on a new search
+        clearFilters();
         if (selectedIngredients.length === 0) {
             setFoundRecipes([]);
             return;
@@ -115,7 +111,6 @@ const RecipeGenerator = ({ allRecipes, userData, onSaveRecipe, onLogMeal }) => {
         setFilters({ cuisine: '', difficulty: '', dietaryType: '' });
     };
 
-    // --- NEW: Get unique options for filter dropdowns from the *found* recipes ---
     const cuisineOptions = [...new Set(foundRecipes.map(r => r.cuisine).filter(Boolean))];
     const difficultyOptions = [...new Set(foundRecipes.map(r => r.difficulty).filter(Boolean))];
     const dietaryOptions = [...new Set(foundRecipes.map(r => r.dietaryType).filter(Boolean))];
@@ -173,7 +168,6 @@ const RecipeGenerator = ({ allRecipes, userData, onSaveRecipe, onLogMeal }) => {
                     <div>
                         <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Suggested Recipes ({foundRecipes.length})</h2>
                         
-                        {/* --- NEW: Filter Bar for Search Results --- */}
                         {foundRecipes.length > 0 && (
                              <div className="mt-4 p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm flex flex-col md:flex-row gap-4 items-center">
                                 <Filter className="text-gray-500 dark:text-gray-400 hidden md:block" />
@@ -218,7 +212,8 @@ const RecipeGenerator = ({ allRecipes, userData, onSaveRecipe, onLogMeal }) => {
                     </div>
                 )}
             </div>
-            {selectedRecipe && <RecipeDetailModal recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} onLogMeal={onLogMeal} />}
+            {/* UPDATED: Pass the user prop down to the modal */}
+            {selectedRecipe && <RecipeDetailModal user={user} recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} onLogMeal={onLogMeal} />}
         </div>
     );
 };

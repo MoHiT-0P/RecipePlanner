@@ -3,16 +3,15 @@ import RecipeCard from '../components/RecipeCard';
 import RecipeDetailModal from '../components/RecipeDetailModal';
 import { Frown } from 'lucide-react';
 
-const SavedRecipes = ({ userData, recipes, onSaveRecipe, onLogMeal }) => {
+const SavedRecipes = ({ user, userData, recipes, onSaveRecipe, onLogMeal }) => { // Added user prop
     const [selectedRecipe, setSelectedRecipe] = useState(null);
-
     const savedRecipeDetails = recipes.filter(recipe => userData.savedRecipes?.includes(recipe.id));
 
     return (
         <div>
             <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100">My Saved Recipes</h1>
             <p className="text-gray-500 dark:text-gray-400 mt-2">Your collection of favorite meals.</p>
-            
+
             {savedRecipeDetails.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-8">
                     {savedRecipeDetails.map(recipe => (
@@ -33,7 +32,8 @@ const SavedRecipes = ({ userData, recipes, onSaveRecipe, onLogMeal }) => {
                 </div>
             )}
 
-            {selectedRecipe && <RecipeDetailModal recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} onLogMeal={onLogMeal} />}
+            {/* UPDATED: Pass the user prop down to the modal */}
+            {selectedRecipe && <RecipeDetailModal user={user} recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} onLogMeal={onLogMeal} />}
         </div>
     );
 };
