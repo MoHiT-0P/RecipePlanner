@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ... other ignored files like node_modules
+
+# Environment variables
+.env

@@ -1,17 +1,15 @@
-// src/firebase.js
-
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
-// Your web app's Firebase configuration
+// Your web app's Firebase configuration is now built from environment variables
 const firebaseConfig = {
-  apiKey: "AIzaSyAgoQIe0DV6xNP34PKgcsfuU2CANvq9fGI",
-  authDomain: "recipeplanner-9b476.firebaseapp.com",
-  projectId: "recipeplanner-9b476",
-  storageBucket: "recipeplanner-9b476.firebasestorage.app",
-  messagingSenderId: "408510480947",
-  appId: "1:408510480947:web:f0b757898ca567a5729946"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // Initialize Firebase
