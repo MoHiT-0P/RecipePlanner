@@ -1,115 +1,717 @@
-import React, { useState, useEffect } from 'react';
-import StatCard from '../components/StatCard';
-import RecipeCard from '../components/RecipeCard';
-import RecipeDetailModal from '../components/RecipeDetailModal';
-import { Utensils, Star, Heart, Clock, Filter, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+    Flame, 
+    Utensils, 
+    ChefHat, 
+    ArrowRight, 
+    Search,
+    Clock,
+    Zap,
+    X,
+    Play,
+    Users,
+    Calendar,
+    Download,
+    Plus,
+    Star,
+    Heart,
+    ChevronLeft,
+    ChevronRight,
+    Leaf
+} from 'lucide-react';
+import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
+// UPDATED: Use relative path to firebase.js
+import { db } from '../firebase.js';
 
-const Dashboard = ({ user, userData, recipes, onSaveRecipe, onLogMeal }) => { // Added user prop
-    const [selectedRecipe, setSelectedRecipe] = useState(null);
-    
-    const [filters, setFilters] = useState({
-        cuisine: '',
-        difficulty: '',
-        dietaryType: '',
-    });
-    const [filteredRecipes, setFilteredRecipes] = useState(recipes);
+// --- Inline RecipeDetailModal Components (Kept inline to ensure stability) ---
 
-    useEffect(() => {
-        let result = recipes;
-        if (filters.cuisine) {
-            result = result.filter(recipe => recipe.cuisine === filters.cuisine);
-        }
-        if (filters.difficulty) {
-            result = result.filter(recipe => recipe.difficulty === filters.difficulty);
-        }
-        if (filters.dietaryType) {
-            result = result.filter(recipe => recipe.dietaryType === filters.dietaryType);
-        }
-        setFilteredRecipes(result);
-    }, [filters, recipes]);
+const AddToPlanModal = ({ onLogMealSubmit, onClose }) => {
+    const today = new Date().toISOString().split('T')[0];
+    const [selectedDate, setSelectedDate] = useState(today);
+    const [mealType, setMealType] = useState('Breakfast');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
 
-    const handleFilterChange = (e) => {
-        const { name, value } = e.target;
-        setFilters(prev => ({ ...prev, [name]: value }));
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+
+        const planDate = new Date(selectedDate + 'T00:00:00');
+        const beginningOfToday = new Date();
+        beginningOfToday.setHours(0, 0, 0, 0);
+
+        if (planDate < beginningOfToday) {
+            setError("Cannot add meals to past dates.");
+            setLoading(false);
+            return;
+        }
+
+        try {
+            await onLogMealSubmit(selectedDate, mealType);
+            onClose();
+        } catch (err) {
+            console.error("Error in onLogMealSubmit callback: ", err);
+            setError("Failed to add meal. Please try again.");
+        } finally {
+            setLoading(false);
+        }
     };
-
-    const clearFilters = () => {
-        setFilters({ cuisine: '', difficulty: '', dietaryType: '' });
-    };
-
-    const quickRecipes = recipes.filter(r => r.cookTime <= 30).slice(0, 4);
-    const healthyRecipes = recipes.filter(r => r.totalCalories <= 600).slice(0, 4);
-
-    const cuisineOptions = [...new Set(recipes.map(r => r.cuisine).filter(Boolean))];
-    const difficultyOptions = [...new Set(recipes.map(r => r.difficulty).filter(Boolean))];
-    const dietaryOptions = [...new Set(recipes.map(r => r.dietaryType).filter(Boolean))];
 
     return (
-        <div>
-            <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100">Good morning, Chef! 🧑‍🍳</h1>
-            <p className="text-gray-500 mt-2 dark:text-gray-400">Ready to discover your next favorite recipe?</p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-8">
-                <StatCard icon={<Utensils />} label="Recipes Cooked" value={userData.recipesCooked} />
-                <StatCard icon={<Star />} label="Week Streak" value={userData.weekStreak} />
-                <StatCard icon={<Heart />} label="Saved Recipes" value={userData.savedRecipes?.length || 0} />
-                <StatCard icon={<Clock />} label="Calories Today" value={userData.caloriesToday} />
-            </div>
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-[60]">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md">
+                <header className="p-4 border-b dark:border-gray-700 flex justify-between items-center">
+                    <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Add to Meal Plan</h2>
+                    <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><X size={24} /></button>
+                </header>
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    <div>
+                        <label htmlFor="meal-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
+                        <div className="relative mt-1">
+                            <span className="absolute inset-y-0 left-0 flex items-center pl-3"><Calendar className="text-gray-400" size={20}/></span>
+                            <input
+                                type="date"
+                                id="meal-date"
+                                value={selectedDate}
+                                onChange={(e) => setSelectedDate(e.target.value)}
+                                required
+                                min={today}
+                                className="w-full pl-10 p-2 border rounded-lg bg-transparent dark:border-gray-600 dark:text-gray-200"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label htmlFor="meal-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Meal</label>
+                         <div className="relative mt-1">
+                            <span className="absolute inset-y-0 left-0 flex items-center pl-3"><Utensils className="text-gray-400" size={20}/></span>
+                            <select
+                                id="meal-type"
+                                value={mealType}
+                                onChange={(e) => setMealType(e.target.value)}
+                                required
+                                className="w-full pl-10 p-2 border rounded-lg appearance-none bg-transparent dark:border-gray-600 dark:text-gray-200"
+                            >
+                                <option>Breakfast</option>
+                                <option>Lunch</option>
+                                <option>Dinner</option>
+                            </select>
+                        </div>
+                    </div>
 
-            <h2 className="text-2xl font-bold text-gray-800 mt-12 dark:text-gray-100">Quick & Easy ⚡</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
-                {quickRecipes.map(recipe => (
-                    <RecipeCard key={recipe.id} recipe={recipe} onSelect={() => setSelectedRecipe(recipe)} isSaved={userData.savedRecipes?.includes(recipe.id)} onSave={() => onSaveRecipe(recipe.id)} />
-                ))}
-            </div>
-
-            <h2 className="text-2xl font-bold text-gray-800 mt-12 dark:text-gray-100">Healthy Choices 🥗</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
-                {healthyRecipes.map(recipe => (
-                    <RecipeCard key={recipe.id} recipe={recipe} onSelect={() => setSelectedRecipe(recipe)} isSaved={userData.savedRecipes?.includes(recipe.id)} onSave={() => onSaveRecipe(recipe.id)} />
-                ))}
-            </div>
-            
-            <div className="mt-12">
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Browse All Recipes</h2>
-                <div className="mt-4 p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm flex flex-col md:flex-row gap-4 items-center">
-                    <Filter className="text-gray-500 dark:text-gray-400 hidden md:block" />
-                    <select name="cuisine" value={filters.cuisine} onChange={handleFilterChange} className="w-full md:w-auto p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200">
-                        <option value="">All Cuisines</option>
-                        {cuisineOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                    </select>
-                     <select name="difficulty" value={filters.difficulty} onChange={handleFilterChange} className="w-full md:w-auto p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200">
-                        <option value="">All Difficulties</option>
-                        {difficultyOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                    </select>
-                    <select name="dietaryType" value={filters.dietaryType} onChange={handleFilterChange} className="w-full md:w-auto p-2 border rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200">
-                        <option value="">All Diets</option>
-                        {dietaryOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                    </select>
-                    <button onClick={clearFilters} className="w-full md:w-auto flex items-center justify-center gap-2 p-2 text-gray-600 dark:text-gray-300 hover:text-red-500 dark:hover:text-red-400 font-semibold transition">
-                        <XCircle size={20} />
-                        <span>Clear</span>
+                    {error && <p className="text-sm text-red-500">{error}</p>}
+                    
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full bg-green-600 text-white p-3 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-gray-400"
+                    >
+                        {loading ? 'Adding...' : 'Add Meal'}
                     </button>
-                </div>
+                </form>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
-                {filteredRecipes.map(recipe => (
-                    <RecipeCard 
-                        key={recipe.id} 
-                        recipe={recipe} 
-                        onSelect={() => setSelectedRecipe(recipe)} 
-                        isSaved={userData.savedRecipes?.includes(recipe.id)}
-                        onSave={() => onSaveRecipe(recipe.id)}
-                    />
-                ))}
-            </div>
-
-            {/* UPDATED: Pass the user prop down to the modal */}
-            {selectedRecipe && <RecipeDetailModal user={user} recipe={selectedRecipe} onClose={() => setSelectedRecipe(null)} onLogMeal={onLogMeal} />}
         </div>
     );
 };
 
-export default Dashboard;
+const RecipeDetailModal = ({ recipe, onClose, onLogMeal }) => {
+    const [isDownloading, setIsDownloading] = useState(false);
+    const [showAddToPlan, setShowAddToPlan] = useState(false);
 
+    const handleDownloadPdf = async () => {
+        setIsDownloading(true);
+        try {
+            const { default: jsPDF } = await import('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.es.min.js');
+            const doc = new jsPDF();
+
+            doc.setFontSize(22);
+            doc.text(recipe.title, 20, 20);
+            
+            doc.setFontSize(12);
+            doc.text(`Cuisine: ${recipe.cuisine}`, 20, 30);
+            doc.text(`Difficulty: ${recipe.difficulty}`, 20, 37);
+            doc.text(`Total Time: ${recipe.totalTime} minutes`, 20, 44);
+            doc.text(`Servings: ${recipe.servings}`, 20, 51);
+            doc.text(`Calories: ${recipe.totalCalories} kcal`, 20, 58);
+
+            doc.setFontSize(16);
+            doc.text("Ingredients:", 20, 70);
+            let y = 78;
+            recipe.ingredients.forEach(ing => {
+                const text = typeof ing === 'object' ? ing.original : ing;
+                doc.text(`- ${text}`, 20, y);
+                y += 7;
+                if (y > 280) { doc.addPage(); y = 20; }
+            });
+
+            y += 5;
+            doc.setFontSize(16);
+            doc.text("Instructions:", 20, y);
+            y += 8;
+            doc.setFontSize(12);
+            recipe.instructions.forEach((inst, index) => {
+                const text = `${index + 1}. ${inst}`;
+                const lines = doc.splitTextToSize(text, 170);
+                doc.text(lines, 20, y);
+                y += (lines.length * 7);
+                if (y > 280) { doc.addPage(); y = 20; }
+            });
+
+            doc.save(`${recipe.title.replace(/\s+/g, '_')}.pdf`);
+        } catch (error) {
+            console.error("Error loading or generating PDF:", error);
+        } finally {
+            setIsDownloading(false);
+        }
+    };
+
+    const handleLogMealSubmit = async (selectedDate, mealType) => {
+        if (onLogMeal) {
+            await onLogMeal(recipe, selectedDate, mealType);
+            setShowAddToPlan(false);
+        } else {
+            console.error("onLogMeal function is not defined");
+        }
+    };
+
+    return (
+        <>
+            <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50" onClick={onClose}>
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                    <header className="p-4 border-b dark:border-gray-700 flex justify-between items-center">
+                        <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 truncate pr-4">{recipe.title}</h2>
+                        <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0"><X size={24} /></button>
+                    </header>
+                    
+                    <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <img src={recipe.imageUrl} alt={recipe.title} className="w-full h-64 object-cover rounded-lg" />
+                            <div className="flex justify-around items-center mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                <div className="text-center">
+                                    <Clock className="mx-auto text-green-600" />
+                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mt-1">{recipe.totalTime} min</p>
+                                </div>
+                                <div className="text-center">
+                                    <Users className="mx-auto text-green-600" />
+                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mt-1">{recipe.servings} servings</p>
+                                </div>
+                                <div className="text-center">
+                                    <span className="text-lg font-bold text-green-600">{recipe.totalCalories}</span>
+                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200">kcal</p>
+                                </div>
+                            </div>
+                            <div className="mt-4 space-y-1">
+                                <p><span className="font-semibold dark:text-gray-200">Cuisine:</span> <span className="text-gray-600 dark:text-gray-300">{recipe.cuisine}</span></p>
+                                <p><span className="font-semibold dark:text-gray-200">Difficulty:</span> <span className="text-gray-600 dark:text-gray-300">{recipe.difficulty}</span></p>
+                                <p><span className="font-semibold dark:text-gray-200">Diet:</span> <span className="text-gray-600 dark:text-gray-300">{recipe.dietaryType}</span></p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">Ingredients</h3>
+                                <ul className="list-disc list-inside space-y-1 text-gray-600 dark:text-gray-300">
+                                    {recipe.ingredients.map((ing, i) => (
+                                        <li key={i}>{typeof ing === 'object' ? ing.original : ing}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">Instructions</h3>
+                                <ol className="list-decimal list-inside space-y-3 text-gray-600 dark:text-gray-300">
+                                    {recipe.instructions.map((step, i) => (
+                                        <li key={i}>{step}</li>
+                                    ))}
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+
+                    <footer className="p-4 border-t dark:border-gray-700 flex flex-col sm:flex-row justify-end gap-3">
+                        <button
+                            onClick={handleDownloadPdf}
+                            disabled={isDownloading}
+                            className="flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition disabled:opacity-50"
+                        >
+                            <Download size={18} />
+                            {isDownloading ? 'Downloading...' : 'Download PDF'}
+                        </button>
+                        <button
+                            onClick={() => setShowAddToPlan(true)}
+                            className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition"
+                        >
+                            <Plus size={18} />
+                            Add to Meal Plan
+                        </button>
+                    </footer>
+                </div>
+            </div>
+
+            {showAddToPlan && (
+                <AddToPlanModal
+                    onClose={() => setShowAddToPlan(false)}
+                    onLogMealSubmit={handleLogMealSubmit}
+                />
+            )}
+        </>
+    );
+};
+
+// --- Dashboard Components ---
+
+const CategoryPill = ({ label, active, onClick }) => (
+    <button 
+        onClick={onClick}
+        className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all border ${
+            active 
+            ? 'bg-green-600 border-green-600 text-white shadow-md' 
+            : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-green-500 hover:text-green-600'
+        }`}
+    >
+        {label}
+    </button>
+);
+
+const RecipeCard = ({ recipe, onSelect, isSaved, onSave }) => {
+    return (
+        <div 
+            onClick={() => onSelect(recipe)}
+            className="flex-shrink-0 w-72 snap-start group relative bg-white dark:bg-gray-800 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 dark:border-gray-700 overflow-hidden cursor-pointer"
+        >
+            {/* Save Button (Heart) */}
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onSave(recipe.id);
+                }}
+                className="absolute top-3 right-3 z-10 p-2 bg-white/90 dark:bg-gray-900/80 backdrop-blur-sm rounded-full shadow-sm hover:scale-110 transition-transform group-hover:opacity-100"
+            >
+                <Heart 
+                    size={18} 
+                    className={`transition-colors ${isSaved ? 'fill-red-500 text-red-500' : 'text-gray-400 hover:text-red-500'}`} 
+                />
+            </button>
+
+            {/* Image Section */}
+            <div className="relative h-44 w-full overflow-hidden">
+                <img 
+                    src={recipe.imageUrl || 'https://placehold.co/600x400/22c55e/FFFFFF?text=Recipe'} 
+                    alt={recipe.title} 
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/600x400/22c55e/FFFFFF?text=Recipe'; }}
+                />
+                {/* Difficulty Badge */}
+                <div className={`absolute bottom-2 left-2 px-2 py-1 rounded-md text-xs font-bold uppercase tracking-wide text-white shadow-sm backdrop-blur-sm ${
+                    (recipe.difficulty || 'easy').toLowerCase() === 'easy' ? 'bg-green-500/90' : 
+                    (recipe.difficulty || '').toLowerCase() === 'medium' ? 'bg-yellow-500/90' : 
+                    'bg-red-500/90'
+                }`}>
+                    {recipe.difficulty || 'Easy'}
+                </div>
+            </div>
+
+            {/* Content Section */}
+            <div className="p-4">
+                <h4 className="text-base font-bold text-gray-900 dark:text-white truncate mb-2 group-hover:text-green-600 transition-colors">
+                    {recipe.title}
+                </h4>
+                
+                {/* Meta Info - Using Real Data */}
+                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-3">
+                    <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">
+                            <Clock size={12} /> {recipe.totalTime || recipe.cookTime || 'N/A'} min
+                        </span>
+                        <span className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">
+                            <Users size={12} /> {recipe.servings || 'N/A'}
+                        </span>
+                        <span className="flex items-center gap-1 text-yellow-500 font-medium">
+                            <Star size={12} fill="currentColor" /> 4.5
+                        </span>
+                    </div>
+                </div>
+
+                {/* Diet/Calorie Tags */}
+                <div className="flex items-center gap-2 mt-2 border-t border-gray-100 dark:border-gray-700 pt-2">
+                    <span className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                        <Zap size={12} className="text-orange-500" /> {recipe.totalCalories || 0} kcal
+                    </span>
+                    {recipe.dietaryType && recipe.dietaryType !== 'None' && (
+                        <span className="text-[10px] px-2 py-0.5 bg-green-50 text-green-700 rounded-full ml-auto">
+                            {recipe.dietaryType}
+                        </span>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Recipe Row with Netflix-style Arrows
+const RecipeRow = ({ title, icon: Icon, recipes, onSelect, onSave, savedRecipeIds }) => {
+    const rowRef = useRef(null);
+
+    const scroll = (direction) => {
+        if (rowRef.current) {
+            const { scrollLeft, clientWidth } = rowRef.current;
+            const scrollTo = direction === 'left' ? scrollLeft - clientWidth / 2 : scrollLeft + clientWidth / 2;
+            rowRef.current.scrollTo({ left: scrollTo, behavior: 'smooth' });
+        }
+    };
+
+    if (!recipes || recipes.length === 0) return null;
+
+    return (
+        <div className="mb-12 relative group/row">
+            <div className="flex justify-between items-end mb-4 px-1">
+                <div className="flex items-center gap-2">
+                    {Icon && <Icon size={24} className="text-gray-800 dark:text-gray-200" />}
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        {title}
+                    </h3>
+                </div>
+                <button className="text-xs font-bold text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 flex items-center gap-1 transition-colors">
+                    View All <ArrowRight size={14} />
+                </button>
+            </div>
+            
+            {/* Scroll Buttons */}
+            <button 
+                onClick={() => scroll('left')}
+                className="absolute -left-4 top-[60%] -translate-y-1/2 z-20 bg-white dark:bg-black/60 p-2 rounded-full shadow-lg border border-gray-100 dark:border-gray-700 opacity-0 group-hover/row:opacity-100 transition-all hover:scale-110 disabled:opacity-0 hidden md:block"
+            >
+                <ChevronLeft size={20} className="text-gray-700 dark:text-gray-200" />
+            </button>
+            <button 
+                onClick={() => scroll('right')}
+                className="absolute -right-4 top-[60%] -translate-y-1/2 z-20 bg-white dark:bg-black/60 p-2 rounded-full shadow-lg border border-gray-100 dark:border-gray-700 opacity-0 group-hover/row:opacity-100 transition-all hover:scale-110 disabled:opacity-0 hidden md:block"
+            >
+                <ChevronRight size={20} className="text-gray-700 dark:text-gray-200" />
+            </button>
+
+            {/* Horizontal Scroll Container */}
+            <div 
+                ref={rowRef}
+                className="flex overflow-x-hidden gap-5 snap-x snap-mandatory py-2 px-1 scroll-smooth"
+            >
+                {recipes.map((recipe) => (
+                    <RecipeCard 
+                        key={recipe.id} 
+                        recipe={recipe} 
+                        onSelect={onSelect} 
+                        isSaved={savedRecipeIds?.includes(recipe.id)}
+                        onSave={onSave}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const Dashboard = ({ user, userData, recipes = [], onLogMeal, onNavigate, onSaveRecipe, db }) => {
+    const [greeting, setGreeting] = useState('Hello');
+    const [todaysMeals, setTodaysMeals] = useState([]);
+    const [loadingMeals, setLoadingMeals] = useState(true);
+    
+    // Search & Filter State
+    const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [activeFilter, setActiveFilter] = useState('All'); // FIX: Added state
+    const searchInputRef = useRef(null);
+
+    // Categories
+    const [quickRecipes, setQuickRecipes] = useState([]);
+    const [healthyRecipes, setHealthyRecipes] = useState([]);
+    const [vegRecipes, setVegRecipes] = useState([]);
+    const [filteredResults, setFilteredResults] = useState([]);
+
+    // 1. Time-based Greeting
+    useEffect(() => {
+        const hour = new Date().getHours();
+        if (hour < 12) setGreeting('Good morning');
+        else if (hour < 18) setGreeting('Good afternoon');
+        else setGreeting('Good evening');
+    }, []);
+
+    // 2. Fetch Stats
+    useEffect(() => {
+        const fetchTodaysMeals = async () => {
+            if (!user) return;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+
+            const q = query(
+                collection(db, `users/${user.uid}/mealPlan`),
+                where("date", ">=", Timestamp.fromDate(today)),
+                where("date", "<", Timestamp.fromDate(tomorrow))
+            );
+
+            try {
+                const snapshot = await getDocs(q);
+                const meals = snapshot.docs.map(doc => doc.data());
+                setTodaysMeals(meals);
+            } catch (error) {
+                console.error("Error fetching today's meals:", error);
+            } finally {
+                setLoadingMeals(false);
+            }
+        };
+        fetchTodaysMeals();
+    }, [user]);
+
+    // 3. Organize Recipes
+    useEffect(() => {
+        if (recipes && recipes.length > 0) {
+            setQuickRecipes(recipes.filter(r => (parseInt(r.totalTime) || parseInt(r.cookTime) || 999) <= 30));
+            setHealthyRecipes(recipes.filter(r => (parseInt(r.totalCalories) || 9999) <= 500));
+            setVegRecipes(recipes.filter(r => 
+                r.dietaryType?.toLowerCase().includes('vegetarian') || 
+                r.title.toLowerCase().includes('salad')
+            ));
+        }
+    }, [recipes]);
+
+    // 4. Search & Filter Logic
+    useEffect(() => {
+        // If no search and 'All' filter, show rows
+        if (!searchTerm && activeFilter === 'All') {
+            setFilteredResults([]); 
+            return;
+        }
+
+        let results = recipes || [];
+
+        // Apply Search
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase();
+            results = results.filter(r => r.title.toLowerCase().includes(term));
+        }
+
+        // Apply Filters
+        if (activeFilter !== 'All') {
+            if (activeFilter === 'Quick') {
+                results = results.filter(r => (parseInt(r.totalTime) || parseInt(r.cookTime) || 999) <= 30);
+            } else if (activeFilter === 'Healthy') {
+                results = results.filter(r => (parseInt(r.totalCalories) || 9999) <= 500);
+            } else if (activeFilter === 'Vegetarian') {
+                results = results.filter(r => r.dietaryType?.toLowerCase().includes('veg')&&r.title.toLowerCase().includes('salad'));
+            } else if (activeFilter === 'Breakfast') {
+                results = results.filter(r => 
+                    r.dishType?.toLowerCase().includes('breakfast') || 
+                    r.title.toLowerCase().includes('egg') ||r.title.toLowerCase().includes('toast') ||
+                    r.title.toLowerCase().includes('pancake')
+                );
+            }
+        }
+
+        setFilteredResults(results);
+    }, [searchTerm, activeFilter, recipes]);
+
+    // Focus input when opened
+    useEffect(() => {
+        if (isSearchExpanded && searchInputRef.current) {
+            searchInputRef.current.focus();
+        }
+    }, [isSearchExpanded]);
+
+    const dailyCalories = todaysMeals.reduce((sum, meal) => sum + (Number(meal.calories) || 0), 0);
+
+    // Stats Widget Data (Original Square Style)
+    const stats = [
+        { label: 'Recipes Cooked', value: userData?.recipesCooked || 0, icon: ChefHat, color: 'text-green-600', bg: 'bg-white' },
+        { label: 'Week Streak', value: userData?.weekStreak || 0, icon: Flame, color: 'text-orange-500', bg: 'bg-white' },
+        { label: 'Saved Recipes', value: userData?.savedRecipes?.length || 0, icon: Heart, color: 'text-red-500', bg: 'bg-white' },
+        { label: 'Calories Today', value: dailyCalories, icon: Zap, color: 'text-blue-500', bg: 'bg-white' },
+    ];
+
+    const [selectedRecipe, setSelectedRecipe] = useState(null);
+
+    return (
+        <div className="pb-20 space-y-10">
+            
+            {/* --- Top Section: Greetings & Stats --- */}
+            <div className="flex flex-col xl:flex-row gap-8 items-start justify-between">
+                {/* Greeting Area */}
+                <div className="bg-blue-50 dark:bg-gray-800 p-8 rounded-3xl w-full xl:w-1/2 relative overflow-hidden border border-blue-100 dark:border-gray-700">
+                    <div className="relative z-10">
+                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                            {greeting}, {userData?.email?.split('@')[0] || 'Chef'}! 👋
+                        </h1>
+                        <p className="text-gray-500 dark:text-gray-400 mb-6">
+                            Ready to discover your next favorite recipe?
+                        </p>
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => onNavigate('recipeGenerator')}
+                                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-semibold shadow-md hover:bg-blue-700 transition-colors"
+                            >
+                                <ChefHat size={18} /> Generate Recipe
+                            </button>
+                            <button 
+                                onClick={() => onNavigate('mealPlanner')}
+                                className="flex items-center gap-2 px-5 py-2.5 bg-white text-gray-700 border border-gray-200 rounded-xl font-semibold hover:bg-gray-50 transition-colors"
+                            >
+                                <Calendar size={18} /> Plan Meals
+                            </button>
+                        </div>
+                    </div>
+                    {/* Decorative Background Circle */}
+                    <div className="absolute -right-10 -top-10 w-48 h-48 bg-blue-100 dark:bg-blue-900/30 rounded-full blur-3xl"></div>
+                </div>
+
+                {/* Stats Widgets (Reference Style: White cards with simple icons) */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full xl:w-1/2">
+                    {stats.map((stat, idx) => (
+                        <div key={idx} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center justify-center text-center h-full transition-transform hover:-translate-y-1">
+                            <div className={`mb-2 p-2 rounded-full ${stat.color.replace('text-', 'bg-').replace('500', '50').replace('600', '50')} dark:bg-gray-700`}>
+                                <stat.icon size={20} className={stat.color} />
+                            </div>
+                            <span className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-medium">{stat.label}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* --- Search & Filter Bar --- */}
+            <div className="flex flex-col md:flex-row items-center gap-4">
+                {/* Collapsible Search */}
+                <div className={`flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full shadow-sm transition-all duration-300 ease-in-out ${isSearchExpanded || searchTerm ? 'w-full md:w-96 px-4 py-2' : 'w-12 h-12 justify-center cursor-pointer hover:bg-gray-50'}`}>
+                    {isSearchExpanded || searchTerm ? (
+                        <>
+                            <Search size={20} className="text-gray-400 flex-shrink-0 mr-3" />
+                            <input 
+                                ref={searchInputRef}
+                                type="text" 
+                                placeholder="Search recipes..." 
+                                className="bg-transparent border-none outline-none w-full text-gray-900 dark:text-white placeholder-gray-400"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onBlur={() => !searchTerm && setIsSearchExpanded(false)}
+                            />
+                            <button onClick={() => { setSearchTerm(''); setIsSearchExpanded(false); }} className="ml-2 text-gray-400 hover:text-gray-600">
+                                <X size={18} />
+                            </button>
+                        </>
+                    ) : (
+                        <button onClick={() => setIsSearchExpanded(true)} className="text-gray-500 dark:text-gray-400">
+                            <Search size={22} />
+                        </button>
+                    )}
+                </div>
+
+                {/* Filters - Now Functional */}
+                <div className="flex gap-2 overflow-x-auto hide-scrollbar w-full md:w-auto pb-1">
+                    {['All', 'Breakfast', 'Healthy', 'Quick', 'Vegetarian'].map(filter => (
+                        <CategoryPill 
+                            key={filter} 
+                            label={filter} 
+                            active={activeFilter === filter} 
+                            onClick={() => setActiveFilter(filter)}
+                        />
+                    ))}
+                </div>
+            </div>
+
+            {/* --- Content Rows --- */}
+            
+            {/* View 1: Search Grid (Shows when searching OR filtering) */}
+            {(searchTerm || activeFilter !== 'All') ? (
+                <div className="animate-fade-in">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">
+                        {filteredResults.length} Result{filteredResults.length !== 1 && 's'} found
+                    </h2>
+                    {filteredResults.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                            {filteredResults.map(recipe => (
+                                <RecipeCard 
+                                    key={recipe.id} 
+                                    recipe={recipe} 
+                                    onSelect={setSelectedRecipe} 
+                                    isSaved={userData.savedRecipes?.includes(recipe.id)}
+                                    onSave={onSaveRecipe}
+                                />
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-center py-12 text-gray-500">
+                            <p>No recipes match your criteria.</p>
+                            <button onClick={() => {setSearchTerm(''); setActiveFilter('All')}} className="text-green-600 font-medium mt-2 hover:underline">Clear Filters</button>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                /* View 2: Netflix-style Rows (Default) */
+                <div className="space-y-4 animate-fade-in">
+                    {/* Featured Recipes (Using First 6 as "Featured") */}
+                    <RecipeRow 
+                        title="Featured Recipes ✨" 
+                        recipes={recipes ? recipes.slice(0, 6) : []} 
+                        onSelect={setSelectedRecipe} 
+                        onSave={onSaveRecipe}
+                        savedRecipeIds={userData.savedRecipes}
+                    />
+
+                    <RecipeRow 
+                        title="Healthy Choices (< 500 kcal)" 
+                        icon={Utensils} 
+                        recipes={healthyRecipes} 
+                        onSelect={setSelectedRecipe} 
+                        onSave={onSaveRecipe}
+                        savedRecipeIds={userData.savedRecipes}
+                    />
+
+                    <RecipeRow 
+                        title="Quick & Easy ⚡" 
+                        icon={Zap} 
+                        recipes={quickRecipes} 
+                        onSelect={setSelectedRecipe} 
+                        onSave={onSaveRecipe}
+                        savedRecipeIds={userData.savedRecipes}
+                    />
+
+                    <RecipeRow 
+                        title="Vegetarian Favorites 🥗" 
+                        icon={Leaf} 
+                        recipes={vegRecipes} 
+                        onSelect={setSelectedRecipe} 
+                        onSave={onSaveRecipe}
+                        savedRecipeIds={userData.savedRecipes}
+                    />
+                </div>
+            )}
+
+            {/* Recipe Detail Modal */}
+            {selectedRecipe && (
+                <RecipeDetailModal 
+                    recipe={selectedRecipe} 
+                    user={user} 
+                    onClose={() => setSelectedRecipe(null)} 
+                    onLogMeal={onLogMeal}
+                />
+            )}
+        </div>
+    );
+};
+
+// Extra Sparkle Icon for featured header
+// const Sparkles = ({ size = 24, className, fill = "none" }) => (
+//     <svg 
+//       xmlns="http://www.w3.org/2000/svg" 
+//       width={size} 
+//       height={size} 
+//       viewBox="0 0 24 24" 
+//       fill={fill} 
+//       stroke="currentColor" 
+//       strokeWidth="2" 
+//       strokeLinecap="round" 
+//       strokeLinejoin="round" 
+//       className={className}
+//     >
+//       <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+//     </svg>
+// );
+
+export default Dashboard;

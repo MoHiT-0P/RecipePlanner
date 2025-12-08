@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../../firebase';
-import { collection, onSnapshot, query, where, deleteDoc, doc } from 'firebase/firestore';
-import { ChevronLeft, ChevronRight, PlusCircle, X } from 'lucide-react';
+import { db } from '../../firebase.js'; // Assuming 'src/pages/MealPlanner' -> 'src/firebase'
+import { collection, onSnapshot, query, where, deleteDoc, doc, Timestamp } from 'firebase/firestore';
+import { ChevronLeft, ChevronRight, PlusCircle, X, AlertTriangle } from 'lucide-react';
 
 // --- Helper function to get a YYYY-MM-DD string from a Date object ---
 const toLocalDateString = (date) => {
@@ -12,10 +12,19 @@ const toLocalDateString = (date) => {
 };
 
 // Main Meal Planner Component
-const MealPlanner = ({ user, recipes }) => {
+const MealPlanner = ({ 
+    user, 
+    recipes, 
+    generationError, 
+    isGeneratingPlan, 
+    onGeneratePlan
+}) => {
     const [weekOffset, setWeekOffset] = useState(0);
     const [weekDates, setWeekDates] = useState([]);
     const [mealPlan, setMealPlan] = useState({});
+    
+    // --- NEW STATE FOR THE CHECKBOX ---
+    const [useAllRecipes, setUseAllRecipes] = useState(false);
 
     // Effect to update the week dates when the offset changes
     useEffect(() => {
@@ -53,14 +62,19 @@ const MealPlanner = ({ user, recipes }) => {
             const plan = {};
             querySnapshot.forEach((doc) => {
                 const data = doc.data();
-                // **THE FIX IS HERE:** Convert timestamp to local date before getting the string
                 const localDate = data.date.toDate(); 
                 const dateStr = toLocalDateString(localDate);
                 
                 if (!plan[dateStr]) {
                     plan[dateStr] = {};
                 }
-                plan[dateStr][data.mealType] = { id: doc.id, ...data };
+                
+                // Ensure mealType exists before assigning
+                if (data.mealType) {
+                    plan[dateStr][data.mealType] = { id: doc.id, ...data };
+                } else {
+                    console.warn("Meal plan item missing mealType:", doc.id);
+                }
             });
             setMealPlan(plan);
         });
@@ -80,13 +94,27 @@ const MealPlanner = ({ user, recipes }) => {
                 endDate={weekDates[6]} 
                 onPrev={() => setWeekOffset(prev => prev - 1)} 
                 onNext={() => setWeekOffset(prev => prev + 1)} 
+                // --- Pass new props down ---
+                onGenerate={onGeneratePlan}
+                isGenerating={isGeneratingPlan}
+                onSetWeekOffset={setWeekOffset}
+                useAllRecipes={useAllRecipes}
+                setUseAllRecipes={setUseAllRecipes}
             />
+
+            {/* --- NEW ERROR DISPLAY --- */}
+            {generationError && (
+                <div className="mt-4 p-4 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-200 rounded-lg flex items-center gap-3">
+                    <AlertTriangle className="h-5 w-5 flex-shrink-0" />
+                    <span className="text-sm font-medium">{generationError}</span>
+                </div>
+            )}
+            
             <div className="grid grid-cols-1 md:grid-cols-7 gap-4 mt-6">
                 {weekDates.map(date => (
                     <DayColumn 
                         key={date.toISOString()} 
                         date={date} 
-                        // Use the corrected local date string to find meals
                         plannedMeals={mealPlan[toLocalDateString(date)] || {}}
                         recipes={recipes}
                         user={user}
@@ -97,17 +125,72 @@ const MealPlanner = ({ user, recipes }) => {
     );
 };
 
-// --- Helper Components for the Planner (No changes below this line) ---
+// --- Helper Components for the Planner ---
 
-const WeekNavigator = ({ startDate, endDate, onPrev, onNext }) => {
+const WeekNavigator = ({ 
+    startDate, 
+    endDate, 
+    onPrev, 
+    onNext, 
+    onGenerate,
+    isGenerating,
+    onSetWeekOffset,
+    // --- NEW PROPS for the checkbox ---
+    useAllRecipes,
+    setUseAllRecipes
+}) => {
     const options = { month: 'short', day: 'numeric' };
+
+    // --- UPDATED: Pass the checkbox state to the AI function ---
+    const handleGenerateClick = async () => {
+        const success = await onGenerate(useAllRecipes); // Pass the state
+        if (success) {
+            onSetWeekOffset(0); // If successful, jump to the current week
+        }
+    };
+
     return (
-        <div className="flex items-center justify-between mt-4 p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm">
-            <button onClick={onPrev} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><ChevronLeft /></button>
-            <div className="text-lg font-semibold text-gray-700 dark:text-gray-200">
-                {startDate.toLocaleDateString(undefined, options)} - {endDate.toLocaleDateString(undefined, { ...options, year: 'numeric' })}
+        <div className="flex flex-wrap items-center justify-between mt-4 p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm gap-4">
+            
+            {/* Week Navigation */}
+            <div className="flex items-center">
+                <button onClick={onPrev} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><ChevronLeft /></button>
+                <div className="text-lg font-semibold text-gray-700 dark:text-gray-200 text-center w-52">
+                    {startDate.toLocaleDateString(undefined, options)} - {endDate.toLocaleDateString(undefined, { ...options, year: 'numeric' })}
+                </div>
+                <button onClick={onNext} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><ChevronRight /></button>
             </div>
-            <button onClick={onNext} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><ChevronRight /></button>
+            
+            {/* AI Controls */}
+            <div className="flex-grow flex flex-col sm:flex-row items-center justify-end gap-3">
+                {/* --- NEW CHECKBOX --- */}
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded text-purple-600 border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:ring-purple-500"
+                        checked={useAllRecipes}
+                        onChange={(e) => setUseAllRecipes(e.target.checked)}
+                        disabled={isGenerating}
+                    />
+                    Discover New Recipes
+                </label>
+                
+                {/* --- AI BUTTON --- */}
+                <button
+                    onClick={handleGenerateClick}
+                    disabled={isGenerating}
+                    className="flex-grow sm:flex-grow-0 w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-semibold hover:from-purple-600 hover:to-pink-600 transition disabled:opacity-50"
+                >
+                    {isGenerating ? (
+                        <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                            Generating...
+                        </>
+                    ) : (
+                        "Auto-Generate Week"
+                    )}
+                </button>
+            </div>
         </div>
     );
 };
@@ -139,19 +222,19 @@ const DayColumn = ({ date, plannedMeals, recipes, user }) => {
 };
 
 const MealSlot = ({ type, meal, recipes, user }) => {
+    // Find the recipe details from the master list
     const recipeDetails = meal ? recipes.find(r => r.id === meal.recipeId) : null;
 
     const handleRemoveMeal = async () => {
         if (!meal || !user) return;
         
-        if (window.confirm(`Are you sure you want to remove "${recipeDetails.title}" from your plan?`)) {
-            try {
-                const mealDocRef = doc(db, `users/${user.uid}/mealPlan`, meal.id);
-                await deleteDoc(mealDocRef);
-            } catch (error) {
-                console.error("Error removing meal:", error);
-                alert("Failed to remove meal from plan.");
-            }
+        // No more window.confirm
+        try {
+            const mealDocRef = doc(db, `users/${user.uid}/mealPlan`, meal.id);
+            await deleteDoc(mealDocRef);
+        } catch (error) {
+            console.error("Error removing meal:", error);
+            // We can't use alert, so we just log to console
         }
     };
 
@@ -160,7 +243,12 @@ const MealSlot = ({ type, meal, recipes, user }) => {
             <div>
                  <p className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-1">{type}</p>
                  <div className="relative bg-gray-50 dark:bg-gray-700 p-2 rounded-lg text-center group">
-                    <img src={recipeDetails.imageUrl} alt={recipeDetails.title} className="w-full h-16 object-cover rounded-md mb-2" />
+                    <img 
+                        src={recipeDetails.imageUrl || 'https://placehold.co/600x400/22c55e/FFFFFF?text=Recipe'} 
+                        alt={recipeDetails.title} 
+                        className="w-full h-16 object-cover rounded-md mb-2" 
+                        onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/600x400/22c55e/FFFFFF?text=Recipe'; }}
+                    />
                     <p className="text-xs font-bold text-gray-800 dark:text-gray-100 truncate">{recipeDetails.title}</p>
                     <button 
                         onClick={handleRemoveMeal}
@@ -185,4 +273,3 @@ const MealSlot = ({ type, meal, recipes, user }) => {
 };
 
 export default MealPlanner;
-
