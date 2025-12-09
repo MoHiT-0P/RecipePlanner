@@ -20,7 +20,6 @@ import {
     Leaf
 } from 'lucide-react';
 import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
-// UPDATED: Use relative path to firebase.js
 import { db } from '../firebase.js';
 
 // --- Inline RecipeDetailModal Components (Kept inline to ensure stability) ---
@@ -98,14 +97,8 @@ const AddToPlanModal = ({ onLogMealSubmit, onClose }) => {
                             </select>
                         </div>
                     </div>
-
                     {error && <p className="text-sm text-red-500">{error}</p>}
-                    
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full bg-green-600 text-white p-3 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-gray-400"
-                    >
+                    <button type="submit" disabled={loading} className="w-full bg-green-600 text-white p-3 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-gray-400">
                         {loading ? 'Adding...' : 'Add Meal'}
                     </button>
                 </form>
@@ -118,51 +111,113 @@ const RecipeDetailModal = ({ recipe, onClose, onLogMeal }) => {
     const [isDownloading, setIsDownloading] = useState(false);
     const [showAddToPlan, setShowAddToPlan] = useState(false);
 
-    const handleDownloadPdf = async () => {
-        setIsDownloading(true);
+    // --- PDF GENERATION LOGIC (Script Injection Method) ---
+    const generatePdf = (jsPDF) => {
         try {
-            const { default: jsPDF } = await import('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.es.min.js');
             const doc = new jsPDF();
+            const margin = 15;
+            let y = 20;
 
             doc.setFontSize(22);
-            doc.text(recipe.title, 20, 20);
+            doc.text(recipe.title, margin, y);
+            y += 10;
             
             doc.setFontSize(12);
-            doc.text(`Cuisine: ${recipe.cuisine}`, 20, 30);
-            doc.text(`Difficulty: ${recipe.difficulty}`, 20, 37);
-            doc.text(`Total Time: ${recipe.totalTime} minutes`, 20, 44);
-            doc.text(`Servings: ${recipe.servings}`, 20, 51);
-            doc.text(`Calories: ${recipe.totalCalories} kcal`, 20, 58);
+            doc.text(`Cuisine: ${recipe.cuisine || 'N/A'}`, margin, y); y += 7;
+            doc.text(`Difficulty: ${recipe.difficulty || 'N/A'}`, margin, y); y += 7;
+            doc.text(`Total Time: ${recipe.totalTime || recipe.cookTime || 'N/A'} mins`, margin, y); y += 7;
+            doc.text(`Servings: ${recipe.servings || 'N/A'}`, margin, y); y += 7;
+            doc.text(`Calories: ${recipe.totalCalories || 'N/A'} kcal`, margin, y); y += 10;
+
+            doc.setLineWidth(0.5);
+            doc.line(margin, y, 195, y);
+            y += 10;
 
             doc.setFontSize(16);
-            doc.text("Ingredients:", 20, 70);
-            let y = 78;
-            recipe.ingredients.forEach(ing => {
+            doc.text("Ingredients:", margin, y);
+            y += 8;
+            doc.setFontSize(12);
+            
+            const ingredients = recipe.ingredients || [];
+            ingredients.forEach(ing => {
                 const text = typeof ing === 'object' ? ing.original : ing;
-                doc.text(`- ${text}`, 20, y);
-                y += 7;
-                if (y > 280) { doc.addPage(); y = 20; }
+                const lines = doc.splitTextToSize(`• ${text}`, 180);
+                
+                if (y + (lines.length * 7) > 280) { doc.addPage(); y = 20; }
+                doc.text(lines, margin, y);
+                y += lines.length * 7;
             });
 
             y += 5;
+            doc.setLineWidth(0.5);
+            doc.line(margin, y, 195, y);
+            y += 10;
+
             doc.setFontSize(16);
-            doc.text("Instructions:", 20, y);
+            doc.text("Instructions:", margin, y);
             y += 8;
             doc.setFontSize(12);
-            recipe.instructions.forEach((inst, index) => {
+            
+            const instructions = recipe.instructions || [];
+            instructions.forEach((inst, index) => {
                 const text = `${index + 1}. ${inst}`;
-                const lines = doc.splitTextToSize(text, 170);
-                doc.text(lines, 20, y);
-                y += (lines.length * 7);
-                if (y > 280) { doc.addPage(); y = 20; }
+                const lines = doc.splitTextToSize(text, 180);
+                
+                if (y + (lines.length * 7) > 280) { doc.addPage(); y = 20; }
+                doc.text(lines, margin, y);
+                y += lines.length * 7 + 3;
             });
 
             doc.save(`${recipe.title.replace(/\s+/g, '_')}.pdf`);
-        } catch (error) {
-            console.error("Error loading or generating PDF:", error);
+        } catch (err) {
+            console.error("PDF Generation Error:", err);
+            alert("Failed to generate PDF");
         } finally {
             setIsDownloading(false);
         }
+    };
+
+    const handleDownloadPdf = () => {
+        setIsDownloading(true);
+        
+        if (window.jspdf && window.jspdf.jsPDF) {
+            generatePdf(window.jspdf.jsPDF);
+            return;
+        }
+        
+        if (window.jsPDF) {
+             generatePdf(window.jsPDF);
+             return;
+        }
+
+        const scriptId = 'jspdf-script';
+        if (document.getElementById(scriptId)) {
+             const script = document.getElementById(scriptId);
+             script.addEventListener('load', () => {
+                 if (window.jspdf && window.jspdf.jsPDF) generatePdf(window.jspdf.jsPDF);
+                 else if (window.jsPDF) generatePdf(window.jsPDF);
+             });
+             return;
+        }
+
+        const script = document.createElement('script');
+        script.id = scriptId;
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        script.async = true;
+        script.onload = () => {
+            if (window.jspdf && window.jspdf.jsPDF) {
+                generatePdf(window.jspdf.jsPDF);
+            } else {
+                console.error("jsPDF not found on window after script load");
+                setIsDownloading(false);
+            }
+        };
+        script.onerror = () => {
+            console.error("Failed to load jsPDF script");
+            setIsDownloading(false);
+            alert("Could not load PDF generator.");
+        };
+        document.body.appendChild(script);
     };
 
     const handleLogMealSubmit = async (selectedDate, mealType) => {
@@ -185,18 +240,18 @@ const RecipeDetailModal = ({ recipe, onClose, onLogMeal }) => {
                     
                     <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <img src={recipe.imageUrl} alt={recipe.title} className="w-full h-64 object-cover rounded-lg" />
+                            <img src={recipe.imageUrl} alt={recipe.title} className="w-full h-64 object-cover rounded-lg" onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/600x400/22c55e/FFFFFF?text=Recipe'; }} />
                             <div className="flex justify-around items-center mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                                 <div className="text-center">
                                     <Clock className="mx-auto text-green-600" />
-                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mt-1">{recipe.totalTime} min</p>
+                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mt-1">{recipe.totalTime || recipe.cookTime || 'N/A'} min</p>
                                 </div>
                                 <div className="text-center">
                                     <Users className="mx-auto text-green-600" />
-                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mt-1">{recipe.servings} servings</p>
+                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mt-1">{recipe.servings || 'N/A'} servings</p>
                                 </div>
                                 <div className="text-center">
-                                    <span className="text-lg font-bold text-green-600">{recipe.totalCalories}</span>
+                                    <span className="text-lg font-bold text-green-600">{recipe.totalCalories || 'N/A'}</span>
                                     <p className="text-sm font-medium text-gray-700 dark:text-gray-200">kcal</p>
                                 </div>
                             </div>
@@ -211,7 +266,7 @@ const RecipeDetailModal = ({ recipe, onClose, onLogMeal }) => {
                             <div>
                                 <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">Ingredients</h3>
                                 <ul className="list-disc list-inside space-y-1 text-gray-600 dark:text-gray-300">
-                                    {recipe.ingredients.map((ing, i) => (
+                                    {(recipe.ingredients || []).map((ing, i) => (
                                         <li key={i}>{typeof ing === 'object' ? ing.original : ing}</li>
                                     ))}
                                 </ul>
@@ -219,7 +274,7 @@ const RecipeDetailModal = ({ recipe, onClose, onLogMeal }) => {
                             <div>
                                 <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">Instructions</h3>
                                 <ol className="list-decimal list-inside space-y-3 text-gray-600 dark:text-gray-300">
-                                    {recipe.instructions.map((step, i) => (
+                                    {(recipe.instructions || []).map((step, i) => (
                                         <li key={i}>{step}</li>
                                     ))}
                                 </ol>
@@ -316,7 +371,7 @@ const RecipeCard = ({ recipe, onSelect, isSaved, onSave }) => {
                     {recipe.title}
                 </h4>
                 
-                {/* Meta Info - Using Real Data */}
+                {/* Meta Info */}
                 <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-3">
                     <div className="flex items-center gap-3">
                         <span className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">
@@ -370,9 +425,9 @@ const RecipeRow = ({ title, icon: Icon, recipes, onSelect, onSave, savedRecipeId
                         {title}
                     </h3>
                 </div>
-                <button className="text-xs font-bold text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 flex items-center gap-1 transition-colors">
+                {/* <button className="text-xs font-bold text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 flex items-center gap-1 transition-colors">
                     View All <ArrowRight size={14} />
-                </button>
+                </button> */}
             </div>
             
             {/* Scroll Buttons */}
@@ -416,7 +471,7 @@ const Dashboard = ({ user, userData, recipes = [], onLogMeal, onNavigate, onSave
     // Search & Filter State
     const [isSearchExpanded, setIsSearchExpanded] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
-    const [activeFilter, setActiveFilter] = useState('All'); // FIX: Added state
+    const [activeFilter, setActiveFilter] = useState('All'); 
     const searchInputRef = useRef(null);
 
     // Categories
@@ -461,21 +516,28 @@ const Dashboard = ({ user, userData, recipes = [], onLogMeal, onNavigate, onSave
         fetchTodaysMeals();
     }, [user]);
 
-    // 3. Organize Recipes
+    // 3. Organize Recipes (UPDATED: Check tags/arrays & STRICT Vegetarian)
     useEffect(() => {
         if (recipes && recipes.length > 0) {
             setQuickRecipes(recipes.filter(r => (parseInt(r.totalTime) || parseInt(r.cookTime) || 999) <= 30));
             setHealthyRecipes(recipes.filter(r => (parseInt(r.totalCalories) || 9999) <= 500));
-            setVegRecipes(recipes.filter(r => 
-                r.dietaryType?.toLowerCase().includes('vegetarian') || 
-                r.title.toLowerCase().includes('salad')
-            ));
+            
+            // STRICT Vegetarian Filter
+            setVegRecipes(recipes.filter(r => {
+                const dietString = r.dietaryType?.toLowerCase() || '';
+                const dishTypes = Array.isArray(r.dishTypes) ? r.dishTypes : [];
+                const diets = Array.isArray(r.diets) ? r.diets : [];
+                const tags = Array.isArray(r.tags) ? r.tags : [];
+                const allTags = [dietString, ...dishTypes, ...diets, ...tags].join(' ').toLowerCase();
+
+                // Must include 'veg' or 'vegan' AND NOT include 'non'
+                return (allTags.includes('veg') || allTags.includes('vegan')) && !allTags.includes('non');
+            }));
         }
     }, [recipes]);
 
-    // 4. Search & Filter Logic
+    // 4. Search & Filter Logic (UPDATED: Check tags/arrays & STRICT Vegetarian)
     useEffect(() => {
-        // If no search and 'All' filter, show rows
         if (!searchTerm && activeFilter === 'All') {
             setFilteredResults([]); 
             return;
@@ -483,33 +545,48 @@ const Dashboard = ({ user, userData, recipes = [], onLogMeal, onNavigate, onSave
 
         let results = recipes || [];
 
-        // Apply Search
         if (searchTerm) {
             const term = searchTerm.toLowerCase();
             results = results.filter(r => r.title.toLowerCase().includes(term));
         }
 
-        // Apply Filters
         if (activeFilter !== 'All') {
             if (activeFilter === 'Quick') {
                 results = results.filter(r => (parseInt(r.totalTime) || parseInt(r.cookTime) || 999) <= 30);
             } else if (activeFilter === 'Healthy') {
                 results = results.filter(r => (parseInt(r.totalCalories) || 9999) <= 500);
             } else if (activeFilter === 'Vegetarian') {
-                results = results.filter(r => r.dietaryType?.toLowerCase().includes('veg')&&r.title.toLowerCase().includes('salad'));
+                // STRICT Vegetarian Filter for Search Results
+                results = results.filter(r => {
+                    const dietString = r.dietaryType?.toLowerCase() || '';
+                    const dishTypes = Array.isArray(r.dishTypes) ? r.dishTypes : [];
+                    const diets = Array.isArray(r.diets) ? r.diets : [];
+                    const tags = Array.isArray(r.tags) ? r.tags : [];
+                    const allTags = [dietString, ...dishTypes, ...diets, ...tags].join(' ').toLowerCase();
+                    return (allTags.includes('veg') || allTags.includes('vegan')) && !allTags.includes('non');
+                });
             } else if (activeFilter === 'Breakfast') {
-                results = results.filter(r => 
-                    r.dishType?.toLowerCase().includes('breakfast') || 
-                    r.title.toLowerCase().includes('egg') ||r.title.toLowerCase().includes('toast') ||
-                    r.title.toLowerCase().includes('pancake')
-                );
+                results = results.filter(r => {
+                    const dishTypes = Array.isArray(r.dishTypes) ? r.dishTypes : [];
+                    const tags = Array.isArray(r.tags) ? r.tags : [];
+                    const dishTypeString = r.dishType?.toLowerCase() || '';
+                    const title = r.title.toLowerCase();
+                    const allTags = [...dishTypes, ...tags, dishTypeString].join(' ').toLowerCase();
+                    return (
+                        allTags.includes('breakfast') || 
+                        allTags.includes('morning meal') ||
+                        title.includes('pancake') ||
+                        title.includes('egg') ||
+                        title.includes('omelet') ||
+                        title.includes('breakfast')
+                    );
+                });
             }
         }
 
         setFilteredResults(results);
     }, [searchTerm, activeFilter, recipes]);
 
-    // Focus input when opened
     useEffect(() => {
         if (isSearchExpanded && searchInputRef.current) {
             searchInputRef.current.focus();
@@ -518,7 +595,6 @@ const Dashboard = ({ user, userData, recipes = [], onLogMeal, onNavigate, onSave
 
     const dailyCalories = todaysMeals.reduce((sum, meal) => sum + (Number(meal.calories) || 0), 0);
 
-    // Stats Widget Data (Original Square Style)
     const stats = [
         { label: 'Recipes Cooked', value: userData?.recipesCooked || 0, icon: ChefHat, color: 'text-green-600', bg: 'bg-white' },
         { label: 'Week Streak', value: userData?.weekStreak || 0, icon: Flame, color: 'text-orange-500', bg: 'bg-white' },
@@ -530,10 +606,8 @@ const Dashboard = ({ user, userData, recipes = [], onLogMeal, onNavigate, onSave
 
     return (
         <div className="pb-20 space-y-10">
-            
-            {/* --- Top Section: Greetings & Stats --- */}
+            {/* Top Section */}
             <div className="flex flex-col xl:flex-row gap-8 items-start justify-between">
-                {/* Greeting Area */}
                 <div className="bg-blue-50 dark:bg-gray-800 p-8 rounded-3xl w-full xl:w-1/2 relative overflow-hidden border border-blue-100 dark:border-gray-700">
                     <div className="relative z-10">
                         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
@@ -557,11 +631,9 @@ const Dashboard = ({ user, userData, recipes = [], onLogMeal, onNavigate, onSave
                             </button>
                         </div>
                     </div>
-                    {/* Decorative Background Circle */}
                     <div className="absolute -right-10 -top-10 w-48 h-48 bg-blue-100 dark:bg-blue-900/30 rounded-full blur-3xl"></div>
                 </div>
 
-                {/* Stats Widgets (Reference Style: White cards with simple icons) */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full xl:w-1/2">
                     {stats.map((stat, idx) => (
                         <div key={idx} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center justify-center text-center h-full transition-transform hover:-translate-y-1">
@@ -575,9 +647,8 @@ const Dashboard = ({ user, userData, recipes = [], onLogMeal, onNavigate, onSave
                 </div>
             </div>
 
-            {/* --- Search & Filter Bar --- */}
+            {/* Search & Filter */}
             <div className="flex flex-col md:flex-row items-center gap-4">
-                {/* Collapsible Search */}
                 <div className={`flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full shadow-sm transition-all duration-300 ease-in-out ${isSearchExpanded || searchTerm ? 'w-full md:w-96 px-4 py-2' : 'w-12 h-12 justify-center cursor-pointer hover:bg-gray-50'}`}>
                     {isSearchExpanded || searchTerm ? (
                         <>
@@ -602,7 +673,6 @@ const Dashboard = ({ user, userData, recipes = [], onLogMeal, onNavigate, onSave
                     )}
                 </div>
 
-                {/* Filters - Now Functional */}
                 <div className="flex gap-2 overflow-x-auto hide-scrollbar w-full md:w-auto pb-1">
                     {['All', 'Breakfast', 'Healthy', 'Quick', 'Vegetarian'].map(filter => (
                         <CategoryPill 
@@ -615,16 +685,14 @@ const Dashboard = ({ user, userData, recipes = [], onLogMeal, onNavigate, onSave
                 </div>
             </div>
 
-            {/* --- Content Rows --- */}
-            
-            {/* View 1: Search Grid (Shows when searching OR filtering) */}
+            {/* Content */}
             {(searchTerm || activeFilter !== 'All') ? (
                 <div className="animate-fade-in">
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">
                         {filteredResults.length} Result{filteredResults.length !== 1 && 's'} found
                     </h2>
                     {filteredResults.length > 0 ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                             {filteredResults.map(recipe => (
                                 <RecipeCard 
                                     key={recipe.id} 
@@ -643,9 +711,7 @@ const Dashboard = ({ user, userData, recipes = [], onLogMeal, onNavigate, onSave
                     )}
                 </div>
             ) : (
-                /* View 2: Netflix-style Rows (Default) */
                 <div className="space-y-4 animate-fade-in">
-                    {/* Featured Recipes (Using First 6 as "Featured") */}
                     <RecipeRow 
                         title="Featured Recipes ✨" 
                         recipes={recipes ? recipes.slice(0, 6) : []} 
@@ -695,23 +761,5 @@ const Dashboard = ({ user, userData, recipes = [], onLogMeal, onNavigate, onSave
         </div>
     );
 };
-
-// Extra Sparkle Icon for featured header
-// const Sparkles = ({ size = 24, className, fill = "none" }) => (
-//     <svg 
-//       xmlns="http://www.w3.org/2000/svg" 
-//       width={size} 
-//       height={size} 
-//       viewBox="0 0 24 24" 
-//       fill={fill} 
-//       stroke="currentColor" 
-//       strokeWidth="2" 
-//       strokeLinecap="round" 
-//       strokeLinejoin="round" 
-//       className={className}
-//     >
-//       <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
-//     </svg>
-// );
 
 export default Dashboard;
