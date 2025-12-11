@@ -26,4 +26,3 @@ dist-ssr
 # ... other ignored files like node_modules
 
 # Environment variables
-.env
